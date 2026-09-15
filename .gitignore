@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+runs/
+
+# Keep best.pt tracked normally unless it grows large (then switch to Git LFS)
