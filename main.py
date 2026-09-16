@@ -20,10 +20,12 @@ import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import gradio as gr
 import numpy as np
 from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 from ultralytics import YOLO
 
 logging.basicConfig(level=logging.INFO)
@@ -67,6 +69,76 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+# Allow the static HTML page (hosted on HF Spaces or elsewhere) to call
+# this API from the browser. "*" is fine for a course/demo project;
+# for production, replace with your specific HF Space URL.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# ---------------------------------------------------------------------------
+# Gradio demo — simple upload-image-see-boxes UI for non-technical users.
+# Mounted onto the same FastAPI app at /gradio, so it deploys together with
+# the API (same Render service, no separate hosting needed).
+# ---------------------------------------------------------------------------
+def gradio_predict(image: Image.Image):
+    """Runs detection on an uploaded image and returns an annotated copy
+    plus a short text summary, for display in the Gradio UI."""
+    model = model_state.get("model")
+    if model is None:
+        return image, "Model is not loaded yet — try again in a moment."
+
+    img_array = np.array(image.convert("RGB"))
+    results = model.predict(img_array, conf=CONFIDENCE_THRESHOLD, verbose=False)
+
+    annotated = image.convert("RGB").copy()
+    draw = ImageDraw.Draw(annotated)
+    good_count = 0
+    bad_count = 0
+
+    for r in results:
+        for box in r.boxes:
+            cls_id = int(box.cls[0])
+            cls_name = r.names[cls_id]
+            confidence = float(box.conf[0])
+            x1, y1, x2, y2 = [float(v) for v in box.xyxy[0]]
+
+            is_bad = cls_name.lower() == "bad"
+            color = "red" if is_bad else "limegreen"
+            if is_bad:
+                bad_count += 1
+            else:
+                good_count += 1
+
+            draw.rectangle([x1, y1, x2, y2], outline=color, width=3)
+            label = f"{cls_name} {confidence:.2f}"
+            draw.text((x1, max(0, y1 - 12)), label, fill=color)
+
+    summary = (
+        f"Total detected: {good_count + bad_count}\n"
+        f"Good: {good_count}\n"
+        f"Bad: {bad_count}"
+    )
+    return annotated, summary
+
+
+gradio_demo = gr.Interface(
+    fn=gradio_predict,
+    inputs=gr.Image(type="pil", label="Upload a potato image"),
+    outputs=[
+        gr.Image(type="pil", label="Detected potatoes"),
+        gr.Textbox(label="Summary"),
+    ],
+    title="Potato Quality Detection",
+    description="Upload a photo from the conveyor belt to see which potatoes are flagged good or bad.",
+)
+
+app = gr.mount_gradio_app(app, gradio_demo, path="/gradio")
 
 
 # ---------------------------------------------------------------------------
