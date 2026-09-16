@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Potato Quality Detector</title>
+<style>
+  body {
+    font-family: system-ui, -apple-system, sans-serif;
+    max-width: 640px;
+    margin: 40px auto;
+    padding: 0 20px;
+    background: #f7f7f5;
+    color: #222;
+  }
+  h1 { font-size: 1.6rem; margin-bottom: 4px; }
+  p.subtitle { color: #666; margin-top: 0; }
+  .card {
+    background: white;
+    border-radius: 12px;
+    padding: 24px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  }
+  input[type="file"] { margin: 12px 0; }
+  button {
+    background: #2f7a3d;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-size: 1rem;
+    cursor: pointer;
+  }
+  button:disabled { background: #999; cursor: not-allowed; }
+  #preview { max-width: 100%; margin-top: 16px; border-radius: 8px; display: none; }
+  #result { margin-top: 16px; white-space: pre-wrap; font-family: monospace; font-size: 0.9rem; }
+  #status { margin-top: 12px; color: #555; }
+</style>
+</head>
+<body>
+
+<h1>🥔 Potato Quality Detector</h1>
+<p class="subtitle">Upload a photo from the conveyor belt to check for good vs. bad potatoes.</p>
+
+<div class="card">
+  <!--
+    IMPORTANT: replace this with your actual live Render URL,
+    e.g. "https://potato-api-xxxx.onrender.com"
+  -->
+  <script>
+    const API_BASE_URL = "https://YOUR-RENDER-URL-HERE.onrender.com";
+  </script>
+
+  <input type="file" id="fileInput" accept="image/*" />
+  <br />
+  <button id="submitBtn" onclick="runDetection()">Detect Potatoes</button>
+
+  <div id="status"></div>
+  <img id="preview" alt="Uploaded preview" />
+  <div id="result"></div>
+</div>
+
+<script>
+  const fileInput = document.getElementById("fileInput");
+  const preview = document.getElementById("preview");
+  const status = document.getElementById("status");
+  const result = document.getElementById("result");
+  const submitBtn = document.getElementById("submitBtn");
+
+  fileInput.addEventListener("change", () => {
+    const file = fileInput.files[0];
+    if (file) {
+      preview.src = URL.createObjectURL(file);
+      preview.style.display = "block";
+    }
+  });
+
+  async function runDetection() {
+    const file = fileInput.files[0];
+    if (!file) {
+      status.textContent = "Please choose an image first.";
+      return;
+    }
+
+    submitBtn.disabled = true;
+    status.textContent = "Running detection... (first request may take up to a minute if the server was asleep)";
+    result.textContent = "";
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/predict`, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`Server returned ${response.status}: ${errText}`);
+      }
+
+      const data = await response.json();
+      status.textContent = "Done.";
+      result.textContent =
+        `Total detected: ${data.total_detections}\n` +
+        `Good: ${data.good_count}\n` +
+        `Bad: ${data.bad_count}\n\n` +
+        JSON.stringify(data.detections, null, 2);
+    } catch (err) {
+      status.textContent = "Error: " + err.message;
+    } finally {
+      submitBtn.disabled = false;
+    }
+  }
+</script>
+
+</body>
+</html>
